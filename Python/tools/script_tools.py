@@ -31,7 +31,8 @@ def register_script_tools(mcp: FastMCP):
         script_name: str,
         script_type: str = "MonoBehaviour",
         namespace: str = None,
-        template: str = None
+        template: str = None,
+        overwrite: bool = False
     ) -> str:
         """Create a new Unity script file.
         
@@ -41,17 +42,32 @@ def register_script_tools(mcp: FastMCP):
             script_type: Type of script (e.g., MonoBehaviour, ScriptableObject)
             namespace: Optional namespace for the script
             template: Optional custom template to use
+            overwrite: Whether to overwrite if script already exists (default: False)
             
         Returns:
             str: Success message or error details
         """
         try:
+            # First check if a script with this name already exists
+            unity = get_unity_connection()
+            script_path = f"Assets/Scripts/{script_name}.cs"
+            
+            # Try to view the script to check if it exists
+            existing_script_response = unity.send_command("VIEW_SCRIPT", {
+                "script_path": script_path
+            })
+            
+            # If the script exists and overwrite is False, return a message
+            if "content" in existing_script_response and not overwrite:
+                return f"Script '{script_name}.cs' already exists. Use overwrite=True to replace it."
+            
             # Send command to Unity to create the script
-            response = get_unity_connection().send_command("CREATE_SCRIPT", {
+            response = unity.send_command("CREATE_SCRIPT", {
                 "script_name": script_name,
                 "script_type": script_type,
                 "namespace": namespace,
-                "template": template
+                "template": template,
+                "overwrite": overwrite
             })
             return response.get("message", "Script created successfully")
         except Exception as e:
@@ -61,7 +77,9 @@ def register_script_tools(mcp: FastMCP):
     def update_script(
         ctx: Context,
         script_path: str,
-        content: str
+        content: str,
+        create_if_missing: bool = False,
+        create_folder_if_missing: bool = False
     ) -> str:
         """Update the contents of an existing Unity script.
         
@@ -69,13 +87,66 @@ def register_script_tools(mcp: FastMCP):
             ctx: The MCP context
             script_path: Path to the script file relative to the Assets folder
             content: New content for the script
+            create_if_missing: Whether to create the script if it doesn't exist (default: False)
+            create_folder_if_missing: Whether to create the parent directory if it doesn't exist (default: False)
             
         Returns:
             str: Success message or error details
         """
         try:
+            unity = get_unity_connection()
+            
+            # Check if the script exists first
+            existing_script_response = unity.send_command("VIEW_SCRIPT", {
+                "script_path": script_path
+            })
+            
+            # If the script doesn't exist
+            if "content" not in existing_script_response:
+                if not create_if_missing:
+                    return f"Script at '{script_path}' not found. Use create_if_missing=True to create it."
+                
+                # If we should create the missing script
+                script_name = script_path.split("/")[-1].replace(".cs", "")
+                script_folder = "/".join(script_path.split("/")[:-1])
+                
+                # Check if the parent directory exists
+                if script_folder:
+                    folder_exists = False
+                    try:
+                        # Try to list scripts in the folder to see if it exists
+                        folder_response = unity.send_command("LIST_SCRIPTS", {
+                            "folder_path": script_folder
+                        })
+                        # If we didn't get an error, the folder exists
+                        folder_exists = "error" not in folder_response
+                    except:
+                        folder_exists = False
+                    
+                    if not folder_exists:
+                        if not create_folder_if_missing:
+                            return f"Parent directory '{script_folder}' does not exist. Use create_folder_if_missing=True to create it."
+                        
+                        # Create the directory structure
+                        try:
+                            response = unity.send_command("CREATE_FOLDER", {
+                                "folder_path": script_folder
+                            })
+                            if "error" in response:
+                                return f"Error creating directory '{script_folder}': {response.get('error')}"
+                        except Exception as folder_error:
+                            return f"Error creating directory '{script_folder}': {str(folder_error)}"
+                
+                # Create the script with the provided content
+                response = unity.send_command("CREATE_SCRIPT", {
+                    "script_name": script_name,
+                    "script_folder": script_folder,
+                    "content": content
+                })
+                return response.get("message", "Script created successfully")
+                
             # Send command to Unity to update the script
-            response = get_unity_connection().send_command("UPDATE_SCRIPT", {
+            response = unity.send_command("UPDATE_SCRIPT", {
                 "script_path": script_path,
                 "content": content
             })
@@ -110,7 +181,8 @@ def register_script_tools(mcp: FastMCP):
     def attach_script(
         ctx: Context,
         object_name: str,
-        script_name: str
+        script_name: str,
+        script_path: str = None
     ) -> str:
         """Attach a script component to a GameObject.
         
@@ -118,15 +190,85 @@ def register_script_tools(mcp: FastMCP):
             ctx: The MCP context
             object_name: Name of the target GameObject in the scene
             script_name: Name of the script to attach (with or without .cs extension)
+            script_path: Optional full path to the script (if not in the default Scripts folder)
             
         Returns:
             str: Success message or error details
         """
         try:
+            unity = get_unity_connection()
+            
+            # Check if the object exists
+            object_response = unity.send_command("FIND_OBJECTS_BY_NAME", {
+                "name": object_name
+            })
+            
+            objects = object_response.get("objects", [])
+            if not objects:
+                return f"GameObject '{object_name}' not found in the scene."
+            
+            # Ensure script_name has .cs extension
+            if not script_name.lower().endswith(".cs"):
+                script_name = f"{script_name}.cs"
+            
+            # Determine the full script path
+            if script_path is None:
+                # Use default Scripts folder if no path provided
+                script_path = f"Assets/Scripts/{script_name}"
+            elif not script_path.endswith(script_name):
+                # If path is just a directory, append the script name
+                if script_path.endswith("/"):
+                    script_path = f"{script_path}{script_name}"
+                else:
+                    script_path = f"{script_path}/{script_name}"
+            
+            # Check if the script exists by trying to view it
+            existing_script_response = unity.send_command("VIEW_SCRIPT", {
+                "script_path": script_path
+            })
+            
+            if "content" not in existing_script_response:
+                # If not found at the specific path, try to search for it in the project
+                script_found = False
+                try:
+                    # Search in the entire Assets folder
+                    script_assets = unity.send_command("LIST_SCRIPTS", {
+                        "folder_path": "Assets"
+                    }).get("scripts", [])
+                    
+                    # Look for matching script name in any folder
+                    matching_scripts = [path for path in script_assets if path.endswith(f"/{script_name}") or path == script_name]
+                    
+                    if matching_scripts:
+                        script_path = matching_scripts[0]
+                        script_found = True
+                        if len(matching_scripts) > 1:
+                            return f"Multiple scripts named '{script_name}' found in the project. Please specify script_path parameter."
+                except:
+                    pass
+                
+                if not script_found:
+                    return f"Script '{script_name}' not found in the project."
+            
+            # Check if the script is already attached
+            object_props = unity.send_command("GET_OBJECT_PROPERTIES", {
+                "name": object_name
+            })
+            
+            # Extract script name without .cs and without path
+            script_class_name = script_name.replace(".cs", "")
+            
+            # Check if component is already attached
+            components = object_props.get("components", [])
+            for component in components:
+                if component.get("type") == script_class_name:
+                    return f"Script '{script_class_name}' is already attached to '{object_name}'."
+            
             # Send command to Unity to attach the script
-            response = get_unity_connection().send_command("ATTACH_SCRIPT", {
+            response = unity.send_command("ATTACH_SCRIPT", {
                 "object_name": object_name,
-                "script_name": script_name
+                "script_name": script_name,
+                "script_path": script_path
             })
             return response.get("message", "Script attached successfully")
         except Exception as e:
