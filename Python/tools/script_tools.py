@@ -96,61 +96,33 @@ def register_script_tools(mcp: FastMCP):
         try:
             unity = get_unity_connection()
             
-            # Check if the script exists first
-            existing_script_response = unity.send_command("VIEW_SCRIPT", {
-                "script_path": script_path
-            })
+            # Parse script path (for potential creation)
+            script_name = script_path.split("/")[-1].replace(".cs", "")
+            script_folder = "/".join(script_path.split("/")[:-1])
             
-            # If the script doesn't exist
-            if "content" not in existing_script_response:
-                if not create_if_missing:
-                    return f"Script at '{script_path}' not found. Use create_if_missing=True to create it."
+            if create_if_missing:
+                # When create_if_missing is true, we'll just try to update directly,
+                # and let Unity handle the creation if needed
+                params = {
+                    "script_path": script_path,
+                    "content": content,
+                    "create_if_missing": True
+                }
                 
-                # If we should create the missing script
-                script_name = script_path.split("/")[-1].replace(".cs", "")
-                script_folder = "/".join(script_path.split("/")[:-1])
-                
-                # Check if the parent directory exists
-                if script_folder:
-                    folder_exists = False
-                    try:
-                        # Try to list scripts in the folder to see if it exists
-                        folder_response = unity.send_command("LIST_SCRIPTS", {
-                            "folder_path": script_folder
-                        })
-                        # If we didn't get an error, the folder exists
-                        folder_exists = "error" not in folder_response
-                    except:
-                        folder_exists = False
+                # Add folder creation flag if requested
+                if create_folder_if_missing:
+                    params["create_folder_if_missing"] = True
                     
-                    if not folder_exists:
-                        if not create_folder_if_missing:
-                            return f"Parent directory '{script_folder}' does not exist. Use create_folder_if_missing=True to create it."
-                        
-                        # Create the directory structure
-                        try:
-                            response = unity.send_command("CREATE_FOLDER", {
-                                "folder_path": script_folder
-                            })
-                            if "error" in response:
-                                return f"Error creating directory '{script_folder}': {response.get('error')}"
-                        except Exception as folder_error:
-                            return f"Error creating directory '{script_folder}': {str(folder_error)}"
-                
-                # Create the script with the provided content
-                response = unity.send_command("CREATE_SCRIPT", {
-                    "script_name": script_name,
-                    "script_folder": script_folder,
+                # Send command to Unity to update/create the script
+                response = unity.send_command("UPDATE_SCRIPT", params)
+                return response.get("message", "Script updated successfully")
+            else:
+                # Standard update without creation flags
+                response = unity.send_command("UPDATE_SCRIPT", {
+                    "script_path": script_path,
                     "content": content
                 })
-                return response.get("message", "Script created successfully")
-                
-            # Send command to Unity to update the script
-            response = unity.send_command("UPDATE_SCRIPT", {
-                "script_path": script_path,
-                "content": content
-            })
-            return response.get("message", "Script updated successfully")
+                return response.get("message", "Script updated successfully")
         except Exception as e:
             return f"Error updating script: {str(e)}"
 

@@ -49,19 +49,52 @@ namespace MCPServer.Editor.Commands
             string scriptType = (string)@params["script_type"] ?? "MonoBehaviour";
             string namespaceName = (string)@params["namespace"];
             string template = (string)@params["template"];
+            string scriptFolder = (string)@params["script_folder"];
+            string content = (string)@params["content"];
 
             // Ensure script name ends with .cs
             if (!scriptName.EndsWith(".cs"))
                 scriptName += ".cs";
-
+                
+            string scriptPath;
+            
+            // If content is provided, use it directly
+            if (!string.IsNullOrEmpty(content))
+            {
+                // Use specified folder or default to Scripts
+                scriptPath = string.IsNullOrEmpty(scriptFolder) ? "Scripts" : scriptFolder;
+                
+                // Ensure folder exists
+                string folderPath = Path.Combine(Application.dataPath, scriptPath);
+                if (!Directory.Exists(folderPath))
+                {
+                    Directory.CreateDirectory(folderPath);
+                    AssetDatabase.Refresh();
+                }
+                
+                // Create the script file with provided content
+                string fullPath = Path.Combine(Application.dataPath, scriptPath, scriptName);
+                File.WriteAllText(fullPath, content);
+                
+                // Refresh the AssetDatabase
+                AssetDatabase.Refresh();
+                
+                return new { message = $"Created script: {Path.Combine(scriptPath, scriptName)}" };
+            }
+            
+            // Otherwise generate content based on template and parameters
+            
             // Ensure Scripts folder exists
             EnsureScriptsFolderExists();
 
             // Create namespace-based folder structure if namespace is specified
-            string scriptPath = "Scripts";
+            scriptPath = string.IsNullOrEmpty(scriptFolder) ? "Scripts" : scriptFolder;
             if (!string.IsNullOrEmpty(namespaceName))
             {
-                scriptPath = Path.Combine(scriptPath, namespaceName.Replace('.', '/'));
+                if (scriptPath == "Scripts") // Only modify path if we're using the default
+                {
+                    scriptPath = Path.Combine(scriptPath, namespaceName.Replace('.', '/'));
+                }
                 string namespaceFolderPath = Path.Combine(Application.dataPath, scriptPath);
                 if (!Directory.Exists(namespaceFolderPath))
                 {
@@ -71,52 +104,56 @@ namespace MCPServer.Editor.Commands
             }
 
             // Create the script content
-            StringBuilder content = new StringBuilder();
+            StringBuilder contentBuilder = new StringBuilder();
 
+            // Add using directives
+            contentBuilder.AppendLine("using UnityEngine;");
+            contentBuilder.AppendLine();
+            
             // Add namespace if specified
             if (!string.IsNullOrEmpty(namespaceName))
             {
-                content.AppendLine($"namespace {namespaceName}");
-                content.AppendLine("{");
+                contentBuilder.AppendLine($"namespace {namespaceName}");
+                contentBuilder.AppendLine("{");
             }
 
             // Add class definition
-            content.AppendLine($"    public class {Path.GetFileNameWithoutExtension(scriptName)} : {scriptType}");
-            content.AppendLine("    {");
+            contentBuilder.AppendLine($"    public class {Path.GetFileNameWithoutExtension(scriptName)} : {scriptType}");
+            contentBuilder.AppendLine("    {");
 
             // Add default Unity methods based on script type
             if (scriptType == "MonoBehaviour")
             {
-                content.AppendLine("        private void Start()");
-                content.AppendLine("        {");
-                content.AppendLine("            // Initialize your component here");
-                content.AppendLine("        }");
-                content.AppendLine();
-                content.AppendLine("        private void Update()");
-                content.AppendLine("        {");
-                content.AppendLine("            // Update your component here");
-                content.AppendLine("        }");
+                contentBuilder.AppendLine("        private void Start()");
+                contentBuilder.AppendLine("        {");
+                contentBuilder.AppendLine("            // Initialize your component here");
+                contentBuilder.AppendLine("        }");
+                contentBuilder.AppendLine();
+                contentBuilder.AppendLine("        private void Update()");
+                contentBuilder.AppendLine("        {");
+                contentBuilder.AppendLine("            // Update your component here");
+                contentBuilder.AppendLine("        }");
             }
             else if (scriptType == "ScriptableObject")
             {
-                content.AppendLine("        private void OnEnable()");
-                content.AppendLine("        {");
-                content.AppendLine("            // Initialize your ScriptableObject here");
-                content.AppendLine("        }");
+                contentBuilder.AppendLine("        private void OnEnable()");
+                contentBuilder.AppendLine("        {");
+                contentBuilder.AppendLine("            // Initialize your ScriptableObject here");
+                contentBuilder.AppendLine("        }");
             }
 
             // Close class
-            content.AppendLine("    }");
+            contentBuilder.AppendLine("    }");
 
             // Close namespace if specified
             if (!string.IsNullOrEmpty(namespaceName))
             {
-                content.AppendLine("}");
+                contentBuilder.AppendLine("}");
             }
 
             // Create the script file in the Scripts folder
-            string fullPath = Path.Combine(Application.dataPath, scriptPath, scriptName);
-            File.WriteAllText(fullPath, content.ToString());
+            string fullFilePath = Path.Combine(Application.dataPath, scriptPath, scriptName);
+            File.WriteAllText(fullFilePath, contentBuilder.ToString());
 
             // Refresh the AssetDatabase
             AssetDatabase.Refresh();
@@ -131,13 +168,39 @@ namespace MCPServer.Editor.Commands
         {
             string scriptPath = (string)@params["script_path"] ?? throw new System.Exception("Parameter 'script_path' is required.");
             string content = (string)@params["content"] ?? throw new System.Exception("Parameter 'content' is required.");
+            bool createIfMissing = (bool?)@params["create_if_missing"] ?? false;
+            bool createFolderIfMissing = (bool?)@params["create_folder_if_missing"] ?? false;
 
             string fullPath = Path.Combine(Application.dataPath, scriptPath);
+            string directory = Path.GetDirectoryName(fullPath);
 
+            // Check if file exists, create if requested
             if (!File.Exists(fullPath))
-                throw new System.Exception($"Script file not found: {scriptPath}");
+            {
+                if (createIfMissing)
+                {
+                    // Create the directory if requested and needed
+                    if (!Directory.Exists(directory) && createFolderIfMissing)
+                    {
+                        Directory.CreateDirectory(directory);
+                    }
+                    else if (!Directory.Exists(directory))
+                    {
+                        throw new System.Exception($"Directory does not exist: {Path.GetDirectoryName(scriptPath)}");
+                    }
+                    
+                    // Create the file with content
+                    File.WriteAllText(fullPath, content);
+                    AssetDatabase.Refresh();
+                    return new { message = $"Created script: {scriptPath}" };
+                }
+                else
+                {
+                    throw new System.Exception($"Script file not found: {scriptPath}");
+                }
+            }
 
-            // Write new content
+            // Update existing script
             File.WriteAllText(fullPath, content);
 
             // Refresh the AssetDatabase
@@ -152,7 +215,24 @@ namespace MCPServer.Editor.Commands
         public static object ListScripts(JObject @params)
         {
             string folderPath = (string)@params["folder_path"] ?? "Assets";
-            string fullPath = Path.Combine(Application.dataPath, folderPath);
+            
+            // Special handling for "Assets" path since it's already the root
+            string fullPath;
+            if (folderPath.Equals("Assets", StringComparison.OrdinalIgnoreCase))
+            {
+                fullPath = Application.dataPath;
+            }
+            else if (folderPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+            {
+                // Remove "Assets/" from the path since Application.dataPath already points to it
+                string relativePath = folderPath.Substring(7);
+                fullPath = Path.Combine(Application.dataPath, relativePath);
+            }
+            else
+            {
+                // Assume it's a relative path from Assets
+                fullPath = Path.Combine(Application.dataPath, folderPath);
+            }
 
             if (!Directory.Exists(fullPath))
                 throw new System.Exception($"Folder not found: {folderPath}");
