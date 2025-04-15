@@ -13,9 +13,9 @@ namespace UnityMcpBridge.Editor.Helpers
         private const string RootFolder = "UnityMCP-HY3D";
         private const string ServerFolder = "UnityMcpServer";
         private const string BranchName = "master";
-        private const string GitUrl = "https://github.com/yujiaao116/unity-mcp.git";
+        private const string GitUrl = "https://github.com/yujijaao116/unity-mcp-hy3d.git";
         private const string PyprojectUrl =
-            "https://raw.githubusercontent.com/yujiaao116/unity-mcp/refs/heads/"
+            "https://raw.githubusercontent.com/yujijaao116/unity-mcp-hy3d/refs/heads/"
             + BranchName
             + "/UnityMcpServer/src/pyproject.toml";
 
