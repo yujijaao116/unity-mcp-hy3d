@@ -6,7 +6,7 @@ namespace UnityMcpBridge.Editor.Models
     [Serializable]
     public class McpConfigServers
     {
-        [JsonProperty("unityMCP")]
+        [JsonProperty("unityMCP-HY3D")]
         public McpConfigServer unityMCP;
     }
 }

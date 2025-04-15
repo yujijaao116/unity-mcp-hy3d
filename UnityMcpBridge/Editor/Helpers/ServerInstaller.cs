@@ -9,12 +9,13 @@ namespace UnityMcpBridge.Editor.Helpers
 {
     public static class ServerInstaller
     {
-        private const string RootFolder = "UnityMCP";
+        // starot changed
+        private const string RootFolder = "UnityMCP-HY3D";
         private const string ServerFolder = "UnityMcpServer";
         private const string BranchName = "master";
-        private const string GitUrl = "https://github.com/justinpbarnett/unity-mcp.git";
+        private const string GitUrl = "https://github.com/yujiaao116/unity-mcp.git";
         private const string PyprojectUrl =
-            "https://raw.githubusercontent.com/justinpbarnett/unity-mcp/refs/heads/"
+            "https://raw.githubusercontent.com/yujiaao116/unity-mcp/refs/heads/"
             + BranchName
             + "/UnityMcpServer/src/pyproject.toml";
 
